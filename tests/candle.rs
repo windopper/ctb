@@ -1,0 +1,15 @@
+use ctb::upbit_api::candle::{get_candle_days, get_candle_seconds};
+
+#[tokio::test]
+async fn test_get_candle_seconds() {
+    let result = get_candle_seconds("KRW-BTC", None, 5).await;
+    // eprintln!("{:?}", result);
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_get_candle_days() {
+    let result = get_candle_days("KRW-BTC", None, 5).await;
+    // eprintln!("{:?}", result);
+    assert!(result.is_ok());
+}
