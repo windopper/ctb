@@ -8,3 +8,8 @@ pub mod ema;
 pub mod adx;
 pub mod parabolic_sar;
 pub mod di;
+pub mod stochastic_rsi;
+pub mod previous;
+pub mod vi;
+pub mod trend;
+pub mod supertrend;

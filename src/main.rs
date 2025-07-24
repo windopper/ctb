@@ -1,100 +1,174 @@
-use ctb::{backtest::lib::{BacktestParams, BacktesterState}, core::{candle::CandleTrait, orderbook::Orderbook, trade::Trade}, strategy::swc::{self, run, MarketState, StrategyParams}, upbit_api::{self, candle::{get_candle_minutes, get_candle_seconds}}};
+use ctb::{
+    backtest::{
+        fetch::fetch_n_minute_candles,
+        lib::{BacktestParams, BacktesterState},
+        simulate::simulate
+    },
+    core::{
+        candle::CandleTrait,
+        orderbook::Orderbook,
+        trade::Trade
+    },
+    strategy::swc::{self, run, StrategyParams},
+    upbit_api::{
+        self,
+        candle::{get_candle_minutes, get_candle_seconds}
+    }
+};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, to_string_pretty, Value};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tungstenite::client::IntoClientRequest;
 use url::Url;
 use std::time::{Duration, Instant};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use rand::Rng;
 
 
 const CODE: &str = "KRW-SAHARA";
 
 #[tokio::main]
 async fn main() {
-    let url = "wss://api.upbit.com/websocket/v1".into_client_request().unwrap();
-    let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-    let (mut write, mut read) = ws_stream.split();
+    // let url = "wss://api.upbit.com/websocket/v1".into_client_request().unwrap();
+    // let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+    // let (mut write, mut read) = ws_stream.split();
 
     // 이제 trade와 orderbook을 모두 구독합니다.
-    let request = json!([
-        {"ticket": "unique_ticket"},
-        {"type": "trade", "codes": [CODE], "is_only_realtime": true},
-        {"type": "orderbook", "codes": [CODE], "is_only_realtime": true},
-        {"format": "SIMPLE"}
-    ]);
+    // let request = json!([
+    //     {"ticket": "unique_ticket"},
+    //     {"type": "trade", "codes": [CODE], "is_only_realtime": true},
+    //     {"type": "orderbook", "codes": [CODE], "is_only_realtime": true},
+    //     {"format": "SIMPLE"}
+    // ]);
 
-    write.send(Message::Text(request.to_string().into())).await.unwrap();
-    println!("Upbit WebSocket 연결 및 구독 성공!");
+    // write.send(Message::Text(request.to_string().into())).await.unwrap();
+    // println!("Upbit WebSocket 연결 및 구독 성공!");
 
-    let mut state = MarketState::new();
-    let params = StrategyParams {
-        trade_delta_window: Duration::from_secs(1), // 최근 1초간의 거래를 분석
-        obi_depth: 5,                                // 위아래 5호가까지 분석
-        wall_krw_threshold: 5_000_000.0,
-        atr_period: 14,
-        atr_multiplier: 2.0,
-        base_delta_threshold: 0.1,
-        bb_period: 20,
-        bb_multiplier: 1.5,
-        adx_period: 14,
-        min_rsi: 35.0,
-        max_rsi: 65.0,
-    };
+    // let mut state = MarketState::new();
+    // let params = StrategyParams {
+    //     trade_delta_window: Duration::from_secs(1), // 최근 1초간의 거래를 분석
+    //     obi_depth: 5,                                
+    //     wall_krw_threshold: 5_000_000.0,
+    //     atr_period: 14,
+    //     atr_multiplier: 2.0,
+    //     base_delta_threshold: 0.1,
+    //     bb_period: 20,
+    //     bb_multiplier: 1.5,
+    //     adx_period: 14,
+    //     rsi_period: 8,
+    //     risk_reward_ratio: 2.0,
+    //     atr_trailing_multiplier: 1.5,
+    // };
+
+    // let backtest_params = BacktestParams {
+    //     take_profit_pct: 0.02,
+    //     trailing_stop_pct: 0.004,
+    //     fees_pct: 0.0005,
+    // };
+
+    // let mut backtester = BacktesterState::new(backtest_params);
+
+
 
     let backtest_params = BacktestParams {
         take_profit_pct: 0.02,
-        stop_loss_pct: 0.04,
-        trailing_stop_pct: 0.004,
         fees_pct: 0.0005,
     };
 
-    let mut backtester = BacktesterState::new(backtest_params);
-    
-    // 1초마다 캔들 업데이트
+    let mut win_count = 0;
+    let mut loss_count = 0;
+    let mut total_pnl_pct = 0.0;
     let mut interval = tokio::time::interval(Duration::from_secs(1));
 
-    // 10초마다 현재 수익률 출력
-    let mut profit_interval = tokio::time::interval(Duration::from_secs(10));
-
+    let mut count = 0;
+    let round = 10;
+    
     loop {
         tokio::select! {
-            // WebSocket 메시지 수신 처리
-            Some(msg) = read.next() => {
-                if let Ok(msg) = msg {
-                    if let Ok(text) = msg.to_text() {
-                        let value: Value = serde_json::from_str(&text).unwrap();
-                        
-                        if value["ty"] == "trade" {
-                            let trade: Trade = serde_json::from_str(&text).unwrap();
-                            let current_price = trade.trade_price;
-                            backtester.check_and_close_position(current_price);
-                            state.recent_trades.push_back((Instant::now(), trade));
+            _ = interval.tick() => {
+                println!("count: {}", count);
+                if count == round {
+                    break;
+                }
+                let mut backtester = BacktesterState::new(backtest_params);
+                let now = Utc::now();
+                let day_diff = now - ChronoDuration::days(30);
+                let seconds_range = (now.timestamp() - day_diff.timestamp()) as u64;
+                // 랜덤 오프셋 생성
+                let mut rng = rand::rng();
+                let random_offset = rng.random_range(0..seconds_range);
+                // 랜덤 시각
+                let random_time = day_diff + ChronoDuration::seconds(random_offset as i64);
 
-                            state.prune_old_trades(params.trade_delta_window);
-                            
-                            let signal = swc::run(&mut state, &params);
-
-                            backtester.handle_signal(signal, current_price);
-                        } else if value["ty"] == "orderbook" {
-                            let orderbook: Orderbook = serde_json::from_str(&text).unwrap();
-                            state.current_orderbook = Some(orderbook);
-                        }
+                let candles = fetch_n_minute_candles("KRW-BTC", 100000, &random_time.format("%Y-%m-%dT%H:%M:%SZ").to_string(), 1).await;
+                match candles {
+                    Ok(mut candles) => {
+                        candles.reverse();
+                        let history_candles = candles.split_off(980);
+                        simulate(candles, history_candles, &mut backtester); 
+                        win_count += backtester.win_count;
+                        loss_count += backtester.loss_count;
+                        total_pnl_pct += backtester.total_pnl_pct;
+                        count += 1;
+                    }
+                    Err(e) => {
+                        println!("error: {}", e);
                     }
                 }
             }
-            
-            // 1분마다 주기적으로 실행되는 로직
-            _ = interval.tick() => {
-                let mut candles = get_candle_seconds(CODE, None, 30).await.unwrap();
-                // println!("초 봉 데이터 업데이트");
-                candles.reverse(); // 최신 데이터가 배열의 끝에 와야 함
-                state.historical_candles = candles.into_iter().map(|c| Box::new(c) as Box<dyn CandleTrait>).collect();
-            }
-
-            // 10초마다 현재 수익률 출력
-            _ = profit_interval.tick() => {
-                // backtester.print_results();
-            }
         }
     }
+    println!("{}회 백테스트 완료", round);
+    println!("win_count: {}", win_count);
+    println!("loss_count: {}", loss_count);
+    println!("total_pnl_pct: {}", total_pnl_pct);
+
+
+    // // 1초마다 캔들 업데이트
+    // let mut interval = tokio::time::interval(Duration::from_secs(1));
+
+    // // 10초마다 현재 수익률 출력
+    // let mut profit_interval = tokio::time::interval(Duration::from_secs(10));
+
+    // loop {
+    //     tokio::select! {
+    //         // WebSocket 메시지 수신 처리
+    //         Some(msg) = read.next() => {
+    //             if let Ok(msg) = msg {
+    //                 if let Ok(text) = msg.to_text() {
+    //                     let value: Value = serde_json::from_str(&text).unwrap();
+                        
+    //                     if value["ty"] == "trade" {
+    //                         let trade: Trade = serde_json::from_str(&text).unwrap();
+    //                         let current_price = trade.trade_price;
+    //                         backtester.check_and_close_position(current_price);
+    //                         state.recent_trades.push_back((Instant::now(), trade));
+
+    //                         state.prune_old_trades(params.trade_delta_window);
+                            
+    //                         let signal = swc::run(&mut state, &params);
+
+    //                         backtester.handle_signal(signal, current_price);
+    //                     } else if value["ty"] == "orderbook" {
+    //                         let orderbook: Orderbook = serde_json::from_str(&text).unwrap();
+    //                         state.current_orderbook = Some(orderbook);
+    //                     }
+    //                 }
+    //             }
+    //         }
+            
+    //         // 1분마다 주기적으로 실행되는 로직
+    //         _ = interval.tick() => {
+    //             let mut candles = get_candle_seconds(CODE, None, 30).await.unwrap();
+    //             // println!("초 봉 데이터 업데이트");
+    //             candles.reverse(); // 최신 데이터가 배열의 끝에 와야 함
+    //             state.historical_candles = candles.into_iter().map(|c| Box::new(c) as Box<dyn CandleTrait>).collect();
+    //         }
+
+    //         // 10초마다 현재 수익률 출력
+    //         _ = profit_interval.tick() => {
+    //             // backtester.print_results();
+    //         }
+    //     }
+    // }
 }

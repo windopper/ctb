@@ -1,6 +1,16 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignalReason {
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Signal {
-    Buy,
-    Sell,
+    Buy {
+        reason: String,
+        initial_trailing_stop: f64,
+        take_profit: f64,
+    },
+    Sell(SignalReason),
     Hold,
+    UpdateTrailingStop(f64),
 }

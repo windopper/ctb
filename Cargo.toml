@@ -19,7 +19,13 @@ futures-util = "0.3.31"
 url = "2.5.4"
 tungstenite = "0.27.0"
 tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
+chrono = "0.4.41"
+rand = "0.9.2"
 
 [[test]]
 name = "strategy_tests"
 path = "tests/strategy/mod.rs"
+
+[[test]]
+name = "helper"
+path = "tests/helper/mod.rs"
