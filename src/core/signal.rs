@@ -9,6 +9,7 @@ pub enum Signal {
         reason: String,
         initial_trailing_stop: f64,
         take_profit: f64,
+        asset_pct: f64,
     },
     Sell(SignalReason),
     Hold,

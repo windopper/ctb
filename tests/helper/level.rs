@@ -1,0 +1,221 @@
+use ctb::{core::candle::{Candle, CandleBase, CandleTrait}, helper::level::find_support_resistance};
+
+#[test]
+fn test_find_levels() {
+    let candles = vec![
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:00:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:00:00Z".to_string(),
+            opening_price: 100.0,
+            high_price: 102.0,
+            low_price: 99.0,
+            trade_price: 101.0,
+            timestamp: 100,
+            candle_acc_trade_price: 101.0 * 100.0,
+            candle_acc_trade_volume: 100.0,
+        }}, // 1
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:01:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:01:00Z".to_string(),
+            opening_price: 101.0,
+            high_price: 105.0,
+            low_price: 100.5,
+            trade_price: 104.0,
+            timestamp: 101,
+            candle_acc_trade_price: 104.0 * 1200.0,
+            candle_acc_trade_volume: 1200.0,
+        }},
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:02:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:02:00Z".to_string(),
+            opening_price: 104.0,
+            high_price: 110.0,
+            low_price: 103.5,
+            trade_price: 109.0,
+            timestamp: 102,
+            candle_acc_trade_price: 109.0 * 1500.0,
+            candle_acc_trade_volume: 1500.0,
+        }}, // 저항선 후보 (110)
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:03:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:03:00Z".to_string(),
+            opening_price: 109.0,
+            high_price: 110.5,
+            low_price: 107.0,
+            trade_price: 108.0,
+            timestamp: 103,
+            candle_acc_trade_price: 108.0 * 1300.0,
+            candle_acc_trade_volume: 1300.0,
+        }}, // 저항선 후보 (110.5)
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:04:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:04:00Z".to_string(),
+            opening_price: 108.0,
+            high_price: 109.0,
+            low_price: 101.0,
+            trade_price: 102.0,
+            timestamp: 104,
+            candle_acc_trade_price: 102.0 * 1800.0,
+            candle_acc_trade_volume: 1800.0,
+        }},
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:05:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:05:00Z".to_string(),
+            opening_price: 102.0,
+            high_price: 103.0,
+            low_price: 95.5,
+            trade_price: 96.0,
+            timestamp: 105,
+            candle_acc_trade_price: 96.0 * 2000.0,
+            candle_acc_trade_volume: 2000.0,
+        }},  // 지지선 후보 (95.5)
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:06:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:06:00Z".to_string(),
+            opening_price: 96.0,
+            high_price: 98.0,
+            low_price: 95.0,
+            trade_price: 97.0,
+            timestamp: 106,
+            candle_acc_trade_price: 97.0 * 1400.0,
+            candle_acc_trade_volume: 1400.0,
+        }},   // 지지선 후보 (95.0)
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:07:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:07:00Z".to_string(),
+            opening_price: 97.0,
+            high_price: 105.0,
+            low_price: 96.5,
+            trade_price: 104.0,
+            timestamp: 107,
+            candle_acc_trade_price: 104.0 * 1600.0,
+            candle_acc_trade_volume: 1600.0,
+        }},
+        // ... RSI 계산을 위한 추가 데이터 ...
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:08:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:08:00Z".to_string(),
+            opening_price: 104.0,
+            high_price: 106.0,
+            low_price: 103.0,
+            trade_price: 105.0,
+            timestamp: 108,
+            candle_acc_trade_price: 105.0 * 1100.0,
+            candle_acc_trade_volume: 1100.0,
+        }},
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:09:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:09:00Z".to_string(),
+            opening_price: 105.0,
+            high_price: 108.0,
+            low_price: 104.5,
+            trade_price: 107.0,
+            timestamp: 109,
+            candle_acc_trade_price: 107.0 * 1300.0,
+            candle_acc_trade_volume: 1300.0,
+        }},
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:10:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:10:00Z".to_string(),
+            opening_price: 107.0,
+            high_price: 110.8,
+            low_price: 106.0,
+            trade_price: 109.5,
+            timestamp: 110,
+            candle_acc_trade_price: 109.5 * 1700.0,
+            candle_acc_trade_volume: 1700.0,
+        }}, // 저항선 후보 (110.8)
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:11:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:11:00Z".to_string(),
+            opening_price: 109.5,
+            high_price: 110.0,
+            low_price: 105.0,
+            trade_price: 106.0,
+            timestamp: 111,
+            candle_acc_trade_price: 106.0 * 1900.0,
+            candle_acc_trade_volume: 1900.0,
+        }},
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:12:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:12:00Z".to_string(),
+            opening_price: 106.0,
+            high_price: 107.0,
+            low_price: 96.0,
+            trade_price: 97.0,
+            timestamp: 112,
+            candle_acc_trade_price: 97.0 * 2200.0,
+            candle_acc_trade_volume: 2200.0,
+        }},   // 지지선 후보 (96.0)
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:13:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:13:00Z".to_string(),
+            opening_price: 97.0,
+            high_price: 100.0,
+            low_price: 95.2,
+            trade_price: 99.0,
+            timestamp: 113,
+            candle_acc_trade_price: 99.0 * 1500.0,
+            candle_acc_trade_volume: 1500.0,
+        }},   // 지지선 후보 (95.2)
+        // 스캘핑 신호 테스트를 위한 최근 캔들 데이터
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:14:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:14:00Z".to_string(),
+            opening_price: 99.0,
+            high_price: 102.0,
+            low_price: 98.0,
+            trade_price: 101.5,
+            timestamp: 114,
+            candle_acc_trade_price: 101.5 * 1200.0,
+            candle_acc_trade_volume: 1200.0,
+        }},
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:15:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:15:00Z".to_string(),
+            opening_price: 101.5,
+            high_price: 103.0,
+            low_price: 100.0,
+            trade_price: 100.5,
+            timestamp: 115,
+            candle_acc_trade_price: 100.5 * 1100.0,
+            candle_acc_trade_volume: 1100.0,
+        }},
+        Candle { base: CandleBase {
+            market: "KRW-BTC".to_string(),
+            candle_date_time_kst: "2025-01-01T00:16:00Z".to_string(),
+            candle_date_time_utc: "2025-01-01T00:16:00Z".to_string(),
+            opening_price: 100.5,
+            high_price: 101.0,
+            low_price: 96.1,
+            trade_price: 96.8,
+            timestamp: 116,
+            candle_acc_trade_price: 96.8 * 2500.0,
+            candle_acc_trade_volume: 2500.0,
+        }}, // 지지선 근처에서 반등 시도
+        
+    ];
+
+    let candle_boxes: Vec<Box<dyn CandleTrait>> = candles.into_iter().map(|c| Box::new(c) as Box<dyn CandleTrait>).collect();
+    let candle_refs: Vec<&Box<dyn CandleTrait>> = candle_boxes.iter().collect();
+    let (supports, resistances) = find_support_resistance(candle_refs, 0.01, 3, 20);
+    println!("계산된 지지선 레벨: {:?}", supports);
+    println!("계산된 저항선 레벨: {:?}", resistances);
+    println!("------------------------------------");
+}

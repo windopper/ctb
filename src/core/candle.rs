@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Deserializer};
 
 /// 공통 캔들 정보 구조체
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -46,11 +46,21 @@ pub struct DayCandle {
     #[serde(flatten)]
     pub base: CandleBase,
     /// 전일 종가 (UTC 0시 기준)
+    #[serde(deserialize_with = "null_to_zero_f64")]
     pub prev_closing_price: f64,
     /// 변동가
+    #[serde(deserialize_with = "null_to_zero_f64")]
     pub change_price: f64,
     /// 변동률
-    pub change_rate: f64,
+    #[serde(deserialize_with = "null_to_zero_f64")]
+    pub change_rate: f64,   
+}
+
+fn null_to_zero_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<f64>::deserialize(deserializer)?.unwrap_or(0.0))
 }
 
 pub trait CandleTrait {

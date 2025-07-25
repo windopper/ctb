@@ -1,4 +1,4 @@
-use crate::{core::{signal::Signal, ticker::Ticker}};
+use crate::{core::ticker::Ticker};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio_tungstenite::{connect_async, tungstenite::Message};

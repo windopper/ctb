@@ -35,6 +35,7 @@ pub async fn get_candle_days(market: &str, to: Option<&str>, count: u32) -> Resu
     let body = request_upbit_api("/candles/days", Some(query)).await;
 
     if let Some(body) = body {
+        // println!("{}", body);
         let candles: Vec<DayCandle> = serde_json::from_str(&body)?;
         Ok(candles)
     } else {

@@ -1,5 +1,5 @@
 use crate::{backtest::lib::PositionState, core::signal::{Signal, SignalReason},
-    helper::{ema::calculate_ema, macd::calculate_macd, rsi::calculate_rsi, supertrend::{calculate_supertrend, Ohlcv}, trend::{analyze_trend_moving_average, Trend}, vi::{calculate_vortex_indicator, ViCandle}},
+    helper::{ema::calculate_ema, macd::calculate_macd, supertrend::{calculate_supertrend, Ohlcv}},
     strategy::lib::MarketState
 };
 
@@ -41,9 +41,10 @@ pub fn run(state: &mut MarketState, params: &StrategyParams, current_position: &
                 reason: "Supertrend EMA Golden Cross".to_string(),
                 initial_trailing_stop: current_price - (0.01 * current_price),
                 take_profit: current_price + (0.2 * current_price),
+                asset_pct: 1.0,
             }
         } 
-    } else if let PositionState::InPosition { entry_price: _, take_profit_price: _, trailing_stop_price } = current_position {
+    } else if let PositionState::InPosition { entry_price: _, entry_asset: _, take_profit_price: _, trailing_stop_price } = current_position {
         if current_price < *trailing_stop_price {
             return Signal::Sell(SignalReason { reason: "추적 손절매 도달".to_string() });
         }

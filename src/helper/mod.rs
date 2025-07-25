@@ -13,3 +13,6 @@ pub mod previous;
 pub mod vi;
 pub mod trend;
 pub mod supertrend;
+pub mod vwma;
+pub mod level;
+pub mod sma;

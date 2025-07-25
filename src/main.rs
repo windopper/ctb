@@ -1,6 +1,6 @@
 use ctb::{
     backtest::{
-        fetch::fetch_n_minute_candles,
+        fetch::{fetch_n_day_candles, fetch_n_minute_candles},
         lib::{BacktestParams, BacktesterState},
         simulate::simulate
     },
@@ -71,7 +71,7 @@ async fn main() {
 
 
     let backtest_params = BacktestParams {
-        take_profit_pct: 0.02,
+        take_profit_pct: 0.2,
         fees_pct: 0.0005,
     };
 
@@ -81,7 +81,7 @@ async fn main() {
     let mut interval = tokio::time::interval(Duration::from_secs(1));
 
     let mut count = 0;
-    let round = 10;
+    let round = 1;
     
     loop {
         tokio::select! {
@@ -92,19 +92,25 @@ async fn main() {
                 }
                 let mut backtester = BacktesterState::new(backtest_params);
                 let now = Utc::now();
-                let day_diff = now - ChronoDuration::days(30);
+                let day_diff = now - ChronoDuration::days(365);
                 let seconds_range = (now.timestamp() - day_diff.timestamp()) as u64;
                 // 랜덤 오프셋 생성
                 let mut rng = rand::rng();
                 let random_offset = rng.random_range(0..seconds_range);
                 // 랜덤 시각
                 let random_time = day_diff + ChronoDuration::seconds(random_offset as i64);
+                let formatted_time = random_time.format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
-                let candles = fetch_n_minute_candles("KRW-BTC", 100000, &random_time.format("%Y-%m-%dT%H:%M:%SZ").to_string(), 1).await;
+                // let current_time = "2025-07-25T00:00:00Z";
+
+                let candle_count = 10000;
+
+                // let candles = fetch_n_day_candles("KRW-BTC", candle_count, &formatted_time).await;
+                let candles = fetch_n_minute_candles("KRW-BTC", candle_count, &formatted_time, 15).await;
                 match candles {
                     Ok(mut candles) => {
                         candles.reverse();
-                        let history_candles = candles.split_off(980);
+                        let history_candles = candles.split_off(candle_count as usize - 200);
                         simulate(candles, history_candles, &mut backtester); 
                         win_count += backtester.win_count;
                         loss_count += backtester.loss_count;
@@ -121,7 +127,7 @@ async fn main() {
     println!("{}회 백테스트 완료", round);
     println!("win_count: {}", win_count);
     println!("loss_count: {}", loss_count);
-    println!("total_pnl_pct: {}", total_pnl_pct);
+    println!("total_pnl_pct: {}", total_pnl_pct / round as f64);
 
 
     // // 1초마다 캔들 업데이트

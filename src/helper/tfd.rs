@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, time::{Duration, Instant}};
+use std::{collections::VecDeque, time::Instant};
 
 use crate::core::trade::{AskBid, Trade};
 

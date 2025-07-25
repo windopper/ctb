@@ -1,4 +1,4 @@
-use crate::core::{orderbook::Orderbook, trade::Trade};
+use crate::core::trade::Trade;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio_tungstenite::{connect_async, tungstenite::Message};

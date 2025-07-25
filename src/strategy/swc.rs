@@ -1,22 +1,15 @@
-use std::{collections::VecDeque, time::{Duration, Instant}};
+use std::time::Duration;
 
 use crate::{
     backtest::lib::PositionState, core::{
-        candle::CandleTrait, 
-        orderbook::Orderbook, 
         signal::{Signal, SignalReason}, 
-        trade::Trade
     }, helper::{
         adx::{calculate_adx, Ohlc}, 
         atr::{calculate_atr, AtrCandle}, 
         bollinger_bands::calculate_bollinger_bands, 
         di::{calculate_di, DiCandle}, 
-        ema::calculate_ema, 
-        obi::calculate_obi, 
-        parabolic_sar::{calculate_parabolic_sar, ParabolicSarCandle}, 
-        previous::{find_previous_peak_with_index, find_previous_trough_with_index}, 
+        previous::find_previous_trough_with_index, 
         rsi::calculate_rsi, 
-        tfd::calculate_trade_delta
     }, strategy::lib::MarketState
 };
 
@@ -146,6 +139,7 @@ pub fn run(state: &mut MarketState, params: &StrategyParams, current_position: &
                         reason: "강세 다이버전스 및 볼린저 밴드 확인".to_string(),
                         initial_trailing_stop: initial_stop,
                         take_profit: take_profit_target,
+                        asset_pct: 1.0,
                     };
                 }
             }
@@ -153,7 +147,7 @@ pub fn run(state: &mut MarketState, params: &StrategyParams, current_position: &
         }
 
         // B. 포지션이 있는 경우: 종료 조건 확인
-        PositionState::InPosition { entry_price: _, take_profit_price: _, trailing_stop_price } => {
+        PositionState::InPosition { entry_price: _, entry_asset: _, take_profit_price: _, trailing_stop_price } => {
             // 조건 1: 추적 손절매 가격 도달 시 매도
             if current_price < *trailing_stop_price {
                 let reason = format!("추적 손절매 도달 (Price: {:.2} < Stop: {:.2})", current_price, trailing_stop_price);

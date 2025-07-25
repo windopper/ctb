@@ -1,5 +1,3 @@
-use std::cmp::{max, Ord};
-
 // OHLCV 데이터를 담을 구조체
 #[derive(Debug, Clone, Copy)]
 pub struct Ohlcv {

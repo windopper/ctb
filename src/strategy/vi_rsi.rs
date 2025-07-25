@@ -21,7 +21,7 @@ pub fn run(state: &mut MarketState, params: &StrategyParams, current_position: &
         low: c.get_low_price(),
         close: c.get_trade_price(),
     }).collect();
-    let vi = calculate_vortex_inPdicator(&vi_candles, 14).unwrap();
+    let vi = calculate_vortex_indicator(&vi_candles, 14).unwrap();
 
     let vi_pluses: Vec<f64> = vi.iter().map(|v| v.vi_plus).collect();
     let latest_vi_plus = vi_pluses.last().unwrap();
@@ -48,16 +48,17 @@ pub fn run(state: &mut MarketState, params: &StrategyParams, current_position: &
             // println!("VI+: {}, VI-: {}, RSI: {}", latest_vi_plus, latest_vi_minus, rsi.last().unwrap());
             return Signal::Buy {
                 reason: "보텍스 지표가 강세 추세를 나타내고 RSI가 모멘텀이 강하지만 과매수 상태가 아닐 때, 매수 신호 발생".to_string(),
-                initial_trailing_stop: current_price - (0.01 * current_price),
-                take_profit: current_price + (0.2 * current_price),
+                initial_trailing_stop: current_price - (0.05 * current_price),
+                take_profit: current_price + (current_price),
+                asset_pct: 1.0,
             };
         }
-    } else if let PositionState::InPosition { entry_price: _, take_profit_price: _, trailing_stop_price } = current_position {
+    } else if let PositionState::InPosition { entry_price: _, entry_asset: _, take_profit_price: _, trailing_stop_price } = current_position {
         if current_price < *trailing_stop_price {
             return Signal::Sell(SignalReason { reason: "추적 손절매 도달".to_string() });
         }
 
-        let new_trailing_stop = current_price - (0.01 * current_price);
+        let new_trailing_stop = current_price - (0.05 * current_price);
         if new_trailing_stop > *trailing_stop_price {
             return Signal::UpdateTrailingStop(new_trailing_stop);
         }
