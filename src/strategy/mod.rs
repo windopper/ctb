@@ -4,3 +4,7 @@ pub mod lib;
 pub mod supertrend_ema;
 pub mod scalp;
 pub mod vwma_ma;
+pub mod vwma_ma_grok;
+pub mod vwap;
+pub mod orderbook;
+pub mod of1;

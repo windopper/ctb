@@ -4,7 +4,7 @@ use crate::{
     backtest::lib::PositionState, core::{
         signal::{Signal, SignalReason}, 
     }, helper::{
-        adx::{calculate_adx, Ohlc}, 
+        adx::{calculate_adx, AdxCandle}, 
         atr::{calculate_atr, AtrCandle}, 
         bollinger_bands::calculate_bollinger_bands, 
         di::{calculate_di, DiCandle}, 
@@ -77,7 +77,7 @@ pub fn run(state: &mut MarketState, params: &StrategyParams, current_position: &
                 None => return Signal::Hold,
             };
 
-            let adx_candles: Vec<Ohlc> = state.historical_candles.iter().map(|c| Ohlc {
+            let adx_candles: Vec<AdxCandle> = state.historical_candles.iter().map(|c| AdxCandle {
                 high: c.get_high_price(), low: c.get_low_price(), close: c.get_trade_price(),
             }).collect();
             let adx = calculate_adx(&adx_candles, params.adx_period);

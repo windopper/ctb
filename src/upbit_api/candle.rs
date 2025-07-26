@@ -7,6 +7,7 @@ pub async fn get_candle_seconds(market: &str, to: Option<&str>, count: u32) -> R
     let body = request_upbit_api("/candles/seconds", Some(query)).await;
 
     if let Some(body) = body {
+        // println!("{}", body);
         let candles: Vec<Candle> = serde_json::from_str(&body)?;
         Ok(candles)
     } else {

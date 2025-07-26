@@ -52,7 +52,7 @@ impl BacktesterState {
     }
     
     /// 매 프레임마다 현재 가격을 체크하여 포지션을 청산할 지 결정
-    pub fn check_and_close_position(&mut self, current_price: f64) {
+    pub fn check_and_close_position(&mut self, current_price: f64, current_date: &str) {
         if let PositionState::InPosition { entry_price, entry_asset, take_profit_price, trailing_stop_price } = self.position {
             let mut pnl_pct = 0.0; // 손익률
             let mut closed = false;
@@ -76,11 +76,13 @@ impl BacktesterState {
                 self.position = PositionState::None; // 포지션 청산
                 if pnl_pct > 0.0 {
                     self.win_count += 1;
-                    println!("\x1b[32m[익절] 진입가: {:.0}, 목표가: {:.0}, 현재가: {:.0}, 수익률: {:.4}%\x1b[0m", 
+                    println!("\x1b[32m[익절] 날짜: {}, 진입가: {:.0}, 목표가: {:.0}, 현재가: {:.0}, 수익률: {:.4}%\x1b[0m", 
+                            current_date,
                             entry_price, take_profit_price, current_price, pnl_pct * 100.0);
                 } else {
                     self.loss_count += 1;
-                    println!("\x1b[31m[손절] 진입가: {:.0}, 트레일링스탑: {:.0}, 현재가: {:.0}, 손실률: {:.4}%\x1b[0m", 
+                    println!("\x1b[31m[손절] 날짜: {}, 진입가: {:.0}, 트레일링스탑: {:.0}, 현재가: {:.0}, 손실률: {:.4}%\x1b[0m", 
+                            current_date,
                             entry_price, trailing_stop_price, current_price, pnl_pct * 100.0);
                 }
                 self.print_results(); // 중간 결과 출력

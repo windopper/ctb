@@ -4,10 +4,13 @@ use serde::{Deserialize, Serialize, Deserializer};
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct CandleBase {
     /// 마켓 코드
+    #[serde(deserialize_with = "null_to_empty_string")]
     pub market: String,
     /// 캔들 시간 (UTC)
+    #[serde(deserialize_with = "null_to_empty_string")]
     pub candle_date_time_utc: String,
     /// 캔들 시간 (KST)
+    #[serde(deserialize_with = "null_to_empty_string")]
     pub candle_date_time_kst: String,
     /// 시가
     pub opening_price: f64,
@@ -54,6 +57,14 @@ pub struct DayCandle {
     /// 변동률
     #[serde(deserialize_with = "null_to_zero_f64")]
     pub change_rate: f64,   
+}
+
+fn null_to_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or("".to_string()))
 }
 
 fn null_to_zero_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>

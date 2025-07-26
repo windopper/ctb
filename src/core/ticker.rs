@@ -90,7 +90,7 @@ pub struct Ticker {
     #[serde(rename = "ab")]
     pub ask_bid: AskBid,
     #[serde(rename = "aav")]
-    pub acc_ask_volume: f64,
+    pub acc_ask_volume: f64, 
     #[serde(rename = "abv")]
     pub acc_bid_volume: f64,
     #[serde(rename = "h52wp")]

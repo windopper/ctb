@@ -1,6 +1,6 @@
 // 시가, 고가, 저가, 종가 데이터를 위한 구조체
 #[derive(Debug, Clone, Copy)]
-pub struct Ohlc {
+pub struct AdxCandle {
     pub high: f64,
     pub low: f64,
     pub close: f64,
@@ -18,8 +18,8 @@ pub struct AdxOutput {
 /// 추세의 강도를 측정하는 지표
 /// 
 /// 25 이상이면 강한 추세, 20 미만이면 약한 추세 또는 횡보장
-pub fn calculate_adx(data: &[Ohlc], period: u32) -> Vec<AdxOutput> {
-    let mut prev_ohlc: Option<Ohlc> = None;
+pub fn calculate_adx(data: &Vec<AdxCandle>, period: u32) -> Vec<AdxOutput> {
+    let mut prev_ohlc: Option<AdxCandle> = None;
     let mut smoothed_plus_dm = 0.0;
     let mut smoothed_minus_dm = 0.0;
     let mut smoothed_tr = 0.0;

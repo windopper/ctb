@@ -1,12 +1,14 @@
 use crate::{
     backtest::lib::PositionState, 
     core::{candle::CandleTrait, signal::{Signal, SignalReason}}, 
-    helper::{level::find_support_resistance, previous::find_previous_trough_with_index, rsi::calculate_rsi, sma::calculate_sma, vwma::{calculate_vwma, VWMACandle}}, 
+    helper::{adx::{calculate_adx, AdxCandle}, level::find_support_resistance, previous::find_previous_trough_with_index, rsi::calculate_rsi, sma::calculate_sma, vwma::{calculate_vwma, VWMACandle}}, 
     strategy::lib::MarketState
 };
 
 pub struct StrategyParams {}
 
+// TODO: ema 추세 추가
+// TODO: 능동적인 손절가 추가
 pub fn run(state: &mut MarketState, _params: &StrategyParams, position: &mut PositionState) -> Signal {
     let closes = state.historical_candles.iter().map(|c| c.get_trade_price()).collect::<Vec<_>>();
     let current_price = *closes.last().unwrap();
@@ -17,32 +19,35 @@ pub fn run(state: &mut MarketState, _params: &StrategyParams, position: &mut Pos
     let vwma = calculate_vwma(&vwma_candles, 100);
     let vwma_last = vwma.last().unwrap().unwrap();
 
-    let ema_50 = calculate_sma(&closes, 50);
-    let ema_50_last = ema_50.unwrap();
-    let ema_200 = calculate_sma(&closes, 200);
-    let ema_200_last = ema_200.unwrap();
+    let ma_50 = calculate_sma(&closes, 50);
+    let ma_50_last = ma_50.unwrap();
+    let ma_200 = calculate_sma(&closes, 200);
+    let ma_200_last = ma_200.unwrap();
 
-    let previous_trough = find_previous_trough_with_index(&closes[closes.len() - 10..], 9);
-    let previous_trough_price = previous_trough.map(|(_, price)| price).unwrap_or(0.0);
+    let previous_trough = closes[closes.len() - 15..closes.len() - 5].iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let previous_trough_price = *previous_trough;
+
+    let adx_candles = state.historical_candles.iter().map(|c| AdxCandle {
+        high: c.get_high_price(),
+        low: c.get_low_price(),
+        close: c.get_trade_price(),
+    }).collect::<Vec<_>>();
+    let adx = calculate_adx(&adx_candles, 14);
+    let adx_last = adx.last().unwrap().adx;
+
+    let adx_lower_than_20 = adx_last > 25.0;
     
     if let PositionState::None = position {
         // ema_50 < vwma < ema_200 일때, 현재가가 ema_50를 돌파하면 매수
-        if current_price > ema_50_last && ema_50_last < vwma_last && ema_50_last < ema_200_last {
-            println!("ema_50_last: {}, vwma_last: {}, ema_200_last: {}, current_price: {}", ema_50_last, vwma_last, ema_200_last, current_price);
+        if current_price > ma_50_last && ma_50_last < vwma_last && ma_50_last < ma_200_last && adx_lower_than_20 {
             return Signal::Buy {
                 reason: "VWMA MA Crossover".to_string(),
                 initial_trailing_stop: previous_trough_price,
-                take_profit: current_price * 2.0,
+                take_profit: current_price + (current_price - previous_trough_price) * 2.0,
                 asset_pct: 1.0,
             };
         }
     } else if let PositionState::InPosition { take_profit_price, trailing_stop_price, .. } = position {
-        // 현재가가 vwma를 돌파했을 때 매도하면 이득일때 매도
-        if current_price > vwma_last && current_price > *take_profit_price {
-            return Signal::Sell(SignalReason {
-                reason: "VWMA Breakout".to_string(),
-            });
-        }
 
         // 이전 저점 가격보다 낮아지면 매도
         if current_price < *trailing_stop_price {
@@ -58,10 +63,10 @@ pub fn run(state: &mut MarketState, _params: &StrategyParams, position: &mut Pos
             });
         }
 
-        let new_trailing_stop = current_price - (0.01 * current_price);
-        if new_trailing_stop > *trailing_stop_price {
-            return Signal::UpdateTrailingStop(new_trailing_stop);
-        }
+        // let new_trailing_stop = current_price - (0.01 * current_price);
+        // if new_trailing_stop > *trailing_stop_price {
+        //     return Signal::UpdateTrailingStop(new_trailing_stop);
+        // }
     }
 
     Signal::Hold
