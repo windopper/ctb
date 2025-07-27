@@ -21,15 +21,21 @@ pub struct Of1State {
 
 }
 
+#[derive(Clone)]
 pub struct Of1Params {
     pub volume_threshold_multiplier: f64, // 의미있는 거래량으로 판단할 최소 거래량
     pub absorption_delta_ratio: f64, // 흡수로 판단할 CVD 델타 비율
     pub rr_ratio: f64, // 리스크 리워드 비율
+    
+    // --- 모멘텀 돌파 전략 ---
+    pub momentum_volume_multiplier: f64,
+    pub momentum_candle_range_multiplier: f64,
 }
 
 impl Of1Params {
     pub fn new() -> Self {
-        Self { volume_threshold_multiplier: 1.2, absorption_delta_ratio: 0.7, rr_ratio: 1.5 }
+        Self { volume_threshold_multiplier: 1.2, absorption_delta_ratio: 0.7, rr_ratio: 1.5,
+            momentum_volume_multiplier: 2.0, momentum_candle_range_multiplier: 2.0 }
     }
 }
 
@@ -49,7 +55,8 @@ impl Of1State {
 
 pub struct Of1Indicator {
     pub top_n_trade_volume_avg: f64,
-    pub candle_10_avg_volume: f64,
+    pub candle_10_avg_volume: f64, // 10캔 평균 거래량
+    pub candle_20_avg_candle_range: f64, // 20캔 평균 캔들 범위
     pub absorption_price: Option<f64>,
     pub footprint_sorted_keys: Vec<String>,
     pub footprint_delta_ratio: f64, // 매수 / 전체 거래량 비율
@@ -57,7 +64,9 @@ pub struct Of1Indicator {
 
 impl Of1Indicator {
     pub fn new() -> Self {
-        Self { top_n_trade_volume_avg: 0.0, candle_10_avg_volume: 0.0, absorption_price: None, footprint_sorted_keys: Vec::new(), footprint_delta_ratio: 0.0 }
+        Self { top_n_trade_volume_avg: 0.0, candle_10_avg_volume: 0.0,
+             candle_20_avg_candle_range: 0.0, absorption_price: None,
+              footprint_sorted_keys: Vec::new(), footprint_delta_ratio: 0.0 }
     }
 }
 
@@ -67,6 +76,11 @@ pub fn calculate_of1_indicator_every_1mcandle(state: &mut Of1State, params: &Of1
     let recent_candle_10 = state.history_candles.iter().rev().take(10).collect::<Vec<&Candle>>();
     let candle_10_avg_volume = recent_candle_10.iter().map(|c| c.get_candle_acc_trade_volume()).sum::<f64>() / recent_candle_10.len() as f64;
     state.indicator.candle_10_avg_volume = candle_10_avg_volume;
+
+    // 20캔 평균 캔들 범위
+    let recent_candle_20 = state.history_candles.iter().rev().take(20).collect::<Vec<&Candle>>();
+    let candle_20_avg_candle_range = recent_candle_20.iter().map(|c| (c.get_high_price() - c.get_low_price()).abs()).sum::<f64>() / recent_candle_20.len() as f64;
+    state.indicator.candle_20_avg_candle_range = candle_20_avg_candle_range;
 
     // 흡수 가격 설정
     let latest_footprint = state.footprints.last();
@@ -122,6 +136,10 @@ pub fn of1(state: &mut Of1State, params: &Of1Params, position: &mut PositionStat
         return Signal::Hold;
     }
 
+    if state.current_mutation_candle.is_none() {
+        return Signal::Hold;
+    }
+
     // history_candle, footprints 최대 200개 저장
     if state.history_candles.len() > 200 {
         state.history_candles.pop_front();
@@ -140,7 +158,7 @@ pub fn of1(state: &mut Of1State, params: &Of1Params, position: &mut PositionStat
     let is_current_volume_higher_than_threshold = last_minute_candle.get_candle_acc_trade_volume() > volume_threshold;
 
     if let PositionState::None = position {
-        // 흡수 가격 설정
+        // 전략1. 흡수 가격 설정 후 추세 반전 관찰
         if absorption_price.is_some() && state.absorb_price.is_none() && is_current_volume_higher_than_threshold {
             state.absorb_price = absorption_price;
             state.absorb_candle_low_price = Some(last_minute_candle.get_low_price());
@@ -154,7 +172,7 @@ pub fn of1(state: &mut Of1State, params: &Of1Params, position: &mut PositionStat
                 if let Some(absorb_candle_low_price) = state.absorb_candle_low_price {
                     state.initialize_session();
                     return Signal::Buy {
-                        reason: "OF1".to_string(),
+                        reason: format!("OF1 Absorption | 흡수 가격: {} | 흡수 캔들 저가: {}", absorb_price, absorb_candle_low_price),
                         initial_trailing_stop: absorb_candle_low_price,
                         take_profit: current_price + (current_price - absorb_candle_low_price) * params.rr_ratio,
                         asset_pct: 1.0,
@@ -163,10 +181,36 @@ pub fn of1(state: &mut Of1State, params: &Of1Params, position: &mut PositionStat
                 state.initialize_session();
             }
 
+            // 흡수 캔들 저가보다 현재 가격이 낮으면 포지션 초기화
             if state.absorb_candle_low_price.is_some() && state.absorb_candle_low_price.unwrap() > current_price {
                 state.initialize_session();
-                return Signal::Hold;
             }
+        }
+
+        // 전략2. 양봉 움직임 && 현재까지의 거래량이 평균을 초과 && 현재까지의 캔들 폭이 평균을 초과
+        let mut_candle = state.current_mutation_candle.as_ref().unwrap();
+        let current_volume = mut_candle.get_candle_acc_trade_volume();
+        let current_range = mut_candle.get_high_price() - mut_candle.get_low_price();
+
+        let avg_volume = state.indicator.candle_10_avg_volume;
+        let avg_range = state.indicator.candle_20_avg_candle_range;
+
+        let is_bullish = mut_candle.get_opening_price() < mut_candle.get_trade_price();
+        if is_bullish &&
+        current_volume > avg_volume * params.momentum_volume_multiplier &&
+        current_range > avg_range * params.momentum_candle_range_multiplier {
+            // 필요한 값들을 미리 추출
+            let stop_loss = mut_candle.get_low_price();
+            let entry_price = mut_candle.get_trade_price();
+            
+            state.initialize_session();
+
+            return Signal::Buy {
+                reason: format!("OF1 Momentum | 캔들 길이 배수: {}배 | 거래량 배수: {}배", current_range / avg_range, current_volume / avg_volume),
+                initial_trailing_stop: stop_loss,
+                take_profit: entry_price + (entry_price - stop_loss) * params.rr_ratio,
+                asset_pct: 1.0,
+            };
         }
     } else if let PositionState::InPosition { entry_price, entry_asset, take_profit_price, trailing_stop_price } = position {
         if current_price > *take_profit_price {

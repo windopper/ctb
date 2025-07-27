@@ -1,21 +1,25 @@
-use std::time::Duration;
+use std::collections::HashMap;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use tokio::{sync::mpsc, time::interval};
+use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use tungstenite::{client::IntoClientRequest, Message};
 
 use crate::core::{candle::{Candle, CandleBase}, orderbook::Orderbook, ticker::Ticker, trade::Trade};
 
+pub struct RealtimeCallback {
+    pub orderbook_fn: Box<dyn FnMut(&Orderbook)>,
+    pub trade_fn: Box<dyn FnMut(&Trade)>,
+    pub ticker_fn: Box<dyn FnMut(&Ticker)>,
+    pub candle_fn: Box<dyn FnMut(&Candle)>,
+    pub exit_fn: Box<dyn FnMut()>,
+}
+
 pub async fn listen_realtime_data(
-    code: &str,
+    codes: &[&str],
     shutdown_recv: &mut mpsc::Receiver<()>,
-    orderbook_fn: &mut dyn FnMut(&Orderbook),
-    trade_fn: &mut dyn FnMut(&Trade),
-    ticker_fn: &mut dyn FnMut(&Ticker),
-    candle_fn: &mut dyn FnMut(&Candle),
-    exit_fn: &mut dyn FnMut(),
+    callback_maps: &mut HashMap<&str, RealtimeCallback>,
 ) {
     let url = "wss://api.upbit.com/websocket/v1".into_client_request().unwrap();
     let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
@@ -23,10 +27,10 @@ pub async fn listen_realtime_data(
 
     let request = json!([
         {"ticket": "unique_ticket"},
-        {"type": "trade", "codes": [code], "is_only_realtime": true},
-        {"type": "orderbook", "codes": [code], "is_only_realtime": true},
-        {"type": "ticker", "codes": [code], "is_only_realtime": true},
-        {"type": "candle.1m", "codes": [code], "is_only_realtime": true},
+        {"type": "trade", "codes": codes, "is_only_realtime": true},
+        {"type": "orderbook", "codes": codes, "is_only_realtime": true},
+        {"type": "ticker", "codes": codes, "is_only_realtime": true},
+        {"type": "candle.1m", "codes": codes, "is_only_realtime": true},
         {"format": "SIMPLE"}
     ]);
 
@@ -38,32 +42,36 @@ pub async fn listen_realtime_data(
                 if let Ok(msg) = msg {
                     if let Ok(text) = msg.to_text() {
                         let value: Value = serde_json::from_str(&text).unwrap();
-                        if value["ty"] == "orderbook" {
-                            let orderbook: Orderbook = serde_json::from_str(&text).unwrap();
-                            orderbook_fn(&orderbook);
-                        } else if value["ty"] == "trade" {
-                            let trade: Trade = serde_json::from_str(&text).unwrap();
-                            trade_fn(&trade);
-                        } else if value["ty"] == "ticker" {
-                            let ticker: Ticker = serde_json::from_str(&text).unwrap();
-                            ticker_fn(&ticker);
-                        } else if value["ty"] == "candle.1m" {
-                            let candle = Candle {
-                                base: CandleBase {
-                                    market: code.to_string(),
-                                    candle_date_time_utc: value["cdttmu"].as_str().unwrap().to_string(),
-                                    candle_date_time_kst: value["cdttmk"].as_str().unwrap().to_string(),
-                                    opening_price: value["op"].as_f64().unwrap(),
-                                    high_price: value["hp"].as_f64().unwrap(),
-                                    low_price: value["lp"].as_f64().unwrap(),
-                                    trade_price: value["tp"].as_f64().unwrap(),
-                                    timestamp: value["tms"].as_u64().unwrap(),
-                                    candle_acc_trade_price: value["catp"].as_f64().unwrap(),
-                                    candle_acc_trade_volume: value["catv"].as_f64().unwrap(),
-                                }
-                            };
+                        let code = value["cd"].as_str().unwrap();
+                        
+                        if let Some(callback) = callback_maps.get_mut(code) {
+                            if value["ty"] == "orderbook" {
+                                let orderbook: Orderbook = serde_json::from_str(&text).unwrap();
+                                (callback.orderbook_fn)(&orderbook);
+                            } else if value["ty"] == "trade" {
+                                let trade: Trade = serde_json::from_str(&text).unwrap();
+                                (callback.trade_fn)(&trade);
+                            } else if value["ty"] == "ticker" {
+                                let ticker: Ticker = serde_json::from_str(&text).unwrap();
+                                (callback.ticker_fn)(&ticker);
+                            } else if value["ty"] == "candle.1m" {
+                                let candle = Candle {
+                                    base: CandleBase {
+                                        market: value["cd"].as_str().unwrap().to_string(),
+                                        candle_date_time_utc: value["cdttmu"].as_str().unwrap().to_string(),
+                                        candle_date_time_kst: value["cdttmk"].as_str().unwrap().to_string(),
+                                        opening_price: value["op"].as_f64().unwrap(),
+                                        high_price: value["hp"].as_f64().unwrap(),
+                                        low_price: value["lp"].as_f64().unwrap(),
+                                        trade_price: value["tp"].as_f64().unwrap(),
+                                        timestamp: value["tms"].as_u64().unwrap(),
+                                        candle_acc_trade_price: value["catp"].as_f64().unwrap(),
+                                        candle_acc_trade_volume: value["catv"].as_f64().unwrap(),
+                                    }
+                                };
 
-                            candle_fn(&candle);
+                                (callback.candle_fn)(&candle);
+                            }
                         }
                     }
                 }
@@ -76,7 +84,10 @@ pub async fn listen_realtime_data(
         }
     }
 
-    exit_fn();
+    // 모든 코드에 대해 exit_fn 호출
+    for callback in callback_maps.values_mut() {
+        (callback.exit_fn)();
+    }
     
     // WebSocket 연결 종료
     if let Err(e) = write.close().await {

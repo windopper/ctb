@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use ctb::backtest::fetch::{fetch_n_day_candles, fetch_n_minute_candles};
+use ctb::{backtest::{fetch::{fetch_n_day_candles, fetch_n_minute_candles}, lib::{BacktestParams, BacktesterState}}, core::signal::Signal};
 
 #[tokio::test]
 async fn test_fetch_n_minute_candles() {
@@ -23,4 +23,15 @@ async fn test_fetch_n_day_candles() {
         set.insert(c.get_candle_date_time_utc());
     }
     assert_eq!(set.len(), candles.len(), "캔들 UTC 시간이 중복됩니다");
+}
+
+#[test]
+fn test_buy_webhook() {
+    let mut backtester = BacktesterState::new(BacktestParams::default("KRW-BTC", "TEST"));
+    backtester.handle_signal(&Signal::Buy {
+        reason: "TEST".to_string(),
+        initial_trailing_stop: 0.0,
+        take_profit: 0.0,
+        asset_pct: 1.0,
+    }, 0.0, "2024-01-01T00:00:00Z");
 }

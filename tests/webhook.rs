@@ -16,7 +16,7 @@ async fn test_send_buy_signal() {
         55000000.0,
         2.5,
         "SuperTrend + EMA"
-    ).await;
+    );
 }
 
 #[tokio::test]
@@ -29,7 +29,7 @@ async fn test_send_sell_signal() {
         4.0,
         "SuperTrend + EMA",
         "목표가 도달"
-    ).await;
+    );
 }
 
 #[tokio::test]
@@ -42,7 +42,7 @@ async fn test_send_sell_signal_loss() {
         -4.0,
         "SuperTrend + EMA",
         "손절가 도달"
-    ).await;
+    );
 }
 
 #[tokio::test]
@@ -55,7 +55,7 @@ async fn test_send_trade_summary() {
         65.0,
         150000.0,
         -500000.0
-    ).await;
+    );
 }
 
 

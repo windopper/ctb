@@ -1,5 +1,5 @@
 use webhook::client::WebhookClient;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
 use crate::env_var;
 
@@ -11,13 +11,13 @@ pub async fn send_webhook(title: &str, content: &str) {
 
     let url: &str = &url_env;
     let client: WebhookClient = WebhookClient::new(url);
+    
     let result = client.send(|message| message
         .username(WEBHOOK_USERNAME)
         .embed(|embed| embed
             .title(title)
             .description(content)
         )
-        
     ).await;
 
     match result {

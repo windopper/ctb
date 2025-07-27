@@ -1,6 +1,7 @@
 use crate::core::signal::Signal;
 use crate::webhook::lib as webhook_lib;
 use std::ops::Add;
+use tokio::spawn;
 
 #[derive(Clone, Debug)]
 pub struct BacktestParams {
@@ -19,7 +20,7 @@ impl BacktestParams {
         Self {
             code: code.to_string(),
             fees_pct: 0.0015,
-            enable_webhook_log: false,
+            enable_webhook_log: true,
             strategy_name: strategy_name.to_string(),
         }
     }
@@ -99,18 +100,25 @@ impl BacktesterState {
                             current_date,
                             entry_price, take_profit_price, current_price, pnl_pct * 100.0);
                     
-                    // 웹훅 로그가 활성화된 경우 매도 신호 전송
-                    if self.params.enable_webhook_log {
+                                    // 웹훅 로그가 활성화된 경우 매도 신호 전송
+                if self.params.enable_webhook_log {
+                    let code = self.params.code.clone();
+                    let strategy_name = self.params.strategy_name.clone();
+                    let current_price = current_price;
+                    let entry_asset = entry_asset;
+                    let pnl_pct = pnl_pct;
+                    spawn(async move {
                         let _ = webhook_lib::send_sell_signal(
-                            &self.params.code,
+                            &code,
                             current_price,
                             entry_asset,
                             entry_asset * pnl_pct,
                             pnl_pct * 100.0,
-                            &self.params.strategy_name,
+                            &strategy_name,
                             "익절"
-                        );
-                    }
+                        ).await;
+                    });
+                }
                 } else {
                     self.loss_count += 1;
                     println!("\x1b[31m[손절] {} - 날짜: {}, 진입가: {:.4}, 트레일링스탑: {:.4}, 현재가: {:.4}, 손실률: {:.4}%\x1b[0m", 
@@ -120,15 +128,22 @@ impl BacktesterState {
                     
                     // 웹훅 로그가 활성화된 경우 매도 신호 전송
                     if self.params.enable_webhook_log {
-                        let _ = webhook_lib::send_sell_signal(
-                            &self.params.code,
-                            current_price,
-                            entry_asset,
-                            entry_asset * pnl_pct,
-                            pnl_pct * 100.0,
-                            &self.params.strategy_name,
-                            "손절"
-                        );
+                        let code = self.params.code.clone();
+                        let strategy_name = self.params.strategy_name.clone();
+                        let current_price = current_price;
+                        let entry_asset = entry_asset;
+                        let pnl_pct = pnl_pct;
+                        spawn(async move {
+                            let _ = webhook_lib::send_sell_signal(
+                                &code,
+                                current_price,
+                                entry_asset,
+                                entry_asset * pnl_pct,
+                                pnl_pct * 100.0,
+                                &strategy_name,
+                                "손절"
+                            ).await;
+                        });
                     }
                 }
                 self.print_results(); // 중간 결과 출력
@@ -164,15 +179,24 @@ impl BacktesterState {
                 
                 // 웹훅 로그가 활성화된 경우 매수 신호 전송
                 if self.params.enable_webhook_log {
-                    let _ = webhook_lib::send_buy_signal(
-                        &self.params.code,
-                        current_price,
-                        self.current_asset * asset_pct,
-                        trailing_stop_price,
-                        *take_profit,
-                        (*take_profit - current_price) / (current_price - trailing_stop_price),
-                        &self.params.strategy_name
-                    );
+                    let code = self.params.code.clone();
+                    let strategy_name = self.params.strategy_name.clone();
+                    let current_price = current_price;
+                    let asset_amount = self.current_asset * asset_pct;
+                    let trailing_stop_price = trailing_stop_price;
+                    let take_profit = *take_profit;
+                    let rr_ratio = (take_profit - current_price) / (current_price - trailing_stop_price);
+                    spawn(async move {
+                        let _ = webhook_lib::send_buy_signal(
+                            &code,
+                            current_price,
+                            asset_amount,
+                            trailing_stop_price,
+                            take_profit,
+                            rr_ratio,
+                            &strategy_name
+                        ).await;
+                    });
                 }
             }
         }
@@ -187,15 +211,23 @@ impl BacktesterState {
                 
                 // 웹훅 로그가 활성화된 경우 매도 신호 전송
                 if self.params.enable_webhook_log {
-                    let _ = webhook_lib::send_sell_signal(
-                        &self.params.code,
-                        current_price,
-                        entry_asset,
-                        entry_asset * pnl_pct,
-                        pnl_pct * 100.0,
-                        &self.params.strategy_name,
-                        &reason.reason
-                    );
+                    let code = self.params.code.clone();
+                    let strategy_name = self.params.strategy_name.clone();
+                    let current_price = current_price;
+                    let entry_asset = entry_asset;
+                    let pnl_pct = pnl_pct;
+                    let reason = reason.reason.clone();
+                    spawn(async move {
+                        let _ = webhook_lib::send_sell_signal(
+                            &code,
+                            current_price,
+                            entry_asset,
+                            entry_asset * pnl_pct,
+                            pnl_pct * 100.0,
+                            &strategy_name,
+                            &reason
+                        ).await;
+                    });
                 }
                 
                 if pnl_pct > 0.0 {
@@ -240,19 +272,25 @@ impl BacktesterState {
         
         // 웹훅 로그가 활성화된 경우 거래 요약 전송
         if self.params.enable_webhook_log {
+            let code = self.params.code.clone();
             let total_trades = self.win_count + self.loss_count;
-            let win_rate = (self.win_count as f64 / total_trades as f64) * 100.0;
-            let avg_profit = if total_trades > 0 { self.total_pnl_pct / total_trades as f64 } else { 0.0 };
+            let win_count = self.win_count;
+            let current_asset = self.current_asset;
+            let total_pnl_pct = self.total_pnl_pct;
+            let win_rate = (win_count as f64 / total_trades as f64) * 100.0;
+            let avg_profit = if total_trades > 0 { total_pnl_pct / total_trades as f64 } else { 0.0 };
             
-            let _ = webhook_lib::send_trade_summary(
-                &self.params.code,
-                total_trades as i32,
-                self.win_count as i32,
-                self.current_asset - INITIAL_ASSET,
-                win_rate,
-                avg_profit,
-                0.0 // max_drawdown은 별도 계산 필요
-            );
+            spawn(async move {
+                let _ = webhook_lib::send_trade_summary(
+                    &code,
+                    total_trades as i32,
+                    win_count as i32,
+                    current_asset - INITIAL_ASSET,
+                    win_rate,
+                    avg_profit,
+                    0.0 // max_drawdown은 별도 계산 필요
+                ).await;
+            });
         }
     }
 }
