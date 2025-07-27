@@ -43,8 +43,6 @@ pub async fn fetch_n_minute_candles(market: &str, mut count: u32, to: &str, unit
         let new_candles = get_candle_minutes(market, Some(&to), count, unit).await?;
         candles.extend(new_candles.clone().into_iter().map(|c| Box::new(c) as Box<dyn CandleTrait>));
     }
-
-    println!("{}개 캔들 가져옴", candles.len());
     Ok(candles)
 } 
 

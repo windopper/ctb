@@ -9,10 +9,16 @@ pub struct Of1State {
     pub current_ticker: Option<Ticker>,
     pub history_candles: VecDeque<Candle>,
     pub footprints: Vec<BTreeMap<String, FootprintValue>>,
+    pub trades: Vec<Trade>,
+    pub current_mutation_candle: Option<Candle>,
 
     // --- 세션 상태 ---
     pub absorb_price: Option<f64>, // 흡수 가격
     pub absorb_candle_low_price: Option<f64>, // 흡수 캔들 최저가
+
+    // --- 지표 ---
+    pub indicator: Of1Indicator,
+
 }
 
 pub struct Of1Params {
@@ -21,7 +27,7 @@ pub struct Of1Params {
     pub rr_ratio: f64, // 리스크 리워드 비율
 }
 
-impl<'a> Of1Params {
+impl Of1Params {
     pub fn new() -> Self {
         Self { volume_threshold_multiplier: 1.2, absorption_delta_ratio: 0.7, rr_ratio: 1.5 }
     }
@@ -29,8 +35,9 @@ impl<'a> Of1Params {
 
 impl Of1State {
     pub fn new() -> Self {
-        Self { current_ticker: None, history_candles: VecDeque::new(), footprints: Vec::new(), 
-            absorb_price: None, absorb_candle_low_price: None
+        Self { current_ticker: None, history_candles: VecDeque::new(), footprints: Vec::new(), trades: Vec::new(), current_mutation_candle: None,
+            absorb_price: None, absorb_candle_low_price: None,
+            indicator: Of1Indicator::new()
         }
     }
 
@@ -38,6 +45,72 @@ impl Of1State {
         self.absorb_price = None;
         self.absorb_candle_low_price = None;
     }
+}
+
+pub struct Of1Indicator {
+    pub top_n_trade_volume_avg: f64,
+    pub candle_10_avg_volume: f64,
+    pub absorption_price: Option<f64>,
+    pub footprint_sorted_keys: Vec<String>,
+    pub footprint_delta_ratio: f64, // 매수 / 전체 거래량 비율
+}
+
+impl Of1Indicator {
+    pub fn new() -> Self {
+        Self { top_n_trade_volume_avg: 0.0, candle_10_avg_volume: 0.0, absorption_price: None, footprint_sorted_keys: Vec::new(), footprint_delta_ratio: 0.0 }
+    }
+}
+
+/// of1 전략의 지표를 미리 계산하는 함수
+pub fn calculate_of1_indicator_every_1mcandle(state: &mut Of1State, params: &Of1Params) {
+    // 10캔 평균 거래량
+    let recent_candle_10 = state.history_candles.iter().rev().take(10).collect::<Vec<&Candle>>();
+    let candle_10_avg_volume = recent_candle_10.iter().map(|c| c.get_candle_acc_trade_volume()).sum::<f64>() / recent_candle_10.len() as f64;
+    state.indicator.candle_10_avg_volume = candle_10_avg_volume;
+
+    // 흡수 가격 설정
+    let latest_footprint = state.footprints.last();
+    match latest_footprint {
+        Some(footprint) => {
+            let mut footprint_sorted_keys = footprint.keys().cloned().collect::<Vec<String>>();
+            let footprint_sorted_keys_ref = footprint_sorted_keys.clone();
+            footprint_sorted_keys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            let mut absorption_price = None;
+            let mut absorption_volume = 0.0;
+
+            for key in footprint_sorted_keys_ref.iter() {
+                let volume = footprint[key].ask_volume + footprint[key].bid_volume;
+                if absorption_volume < volume {
+                    absorption_price = Some(key);
+                    absorption_volume = volume; 
+                }
+            }
+
+            let mut volume_sum = 0.0;
+            let mut ask_volume_sum = 0.0;
+            let mut bid_volume_sum = 0.0;
+
+            // 흡수 가격보다 현재 가격이 높고 이 보다 높은 가격에 대해 강력한 양수 델타 관찰
+            for key in footprint_sorted_keys_ref.iter() {
+                let ask_volume = footprint[key].ask_volume;
+                let bid_volume = footprint[key].bid_volume;
+
+                // 델타 관찰
+                volume_sum += ask_volume + bid_volume;
+                ask_volume_sum += ask_volume;
+                bid_volume_sum += bid_volume;
+            }
+
+            state.indicator.footprint_delta_ratio = bid_volume_sum / volume_sum;
+            state.indicator.footprint_sorted_keys = footprint_sorted_keys;
+            state.indicator.absorption_price = absorption_price.map(|p| p.parse::<f64>().unwrap());
+        }
+        None => {
+            return;
+        }
+    }
+    
 }
 
 pub fn of1(state: &mut Of1State, params: &Of1Params, position: &mut PositionState) -> Signal {
@@ -54,71 +127,32 @@ pub fn of1(state: &mut Of1State, params: &Of1Params, position: &mut PositionStat
         state.history_candles.pop_front();
     }
     if state.footprints.len() > 200 {
-        state.footprints.pop();
+        state.footprints.remove(0);
     }
 
-    let current_candle = state.history_candles.back().unwrap();
-    // let current_trade = state.recent_trades.back().unwrap();
+    let last_minute_candle = state.history_candles.back().unwrap();
     let current_price = state.current_ticker.as_ref().unwrap().trade_price;
 
-    let recent_candle_20 = state.history_candles.iter().rev().take(20).collect::<Vec<&Candle>>();
-    let candle_20_avg_volume = recent_candle_20.iter().map(|c| c.get_candle_acc_trade_volume()).sum::<f64>() / recent_candle_20.len() as f64;
-    let volume_threshold = candle_20_avg_volume * params.volume_threshold_multiplier;
+    let candle_10_avg_volume = state.indicator.candle_10_avg_volume;
+    let volume_threshold = candle_10_avg_volume * params.volume_threshold_multiplier;
 
-    let latest_footprint = state.footprints.last().unwrap();
-
-    let mut footprint_sorted_keys = latest_footprint.keys().collect::<Vec<&String>>();
-    footprint_sorted_keys.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-    let footprint_04_len_floor = (footprint_sorted_keys.len() as f64 * 0.4).floor() as usize;
-    // 전체 중 40%만
-    let footprint_sorted_keys = footprint_sorted_keys.iter().take(footprint_04_len_floor).cloned().collect::<Vec<&String>>();
-
-    // 40% 아래의 footprint 가격 중 가장 높은 거래량이 volume_threshold 보다 크면 흡수
-    let mut absorption_price = None;
-    let mut absorption_volume = 0.0;
-    for key in footprint_sorted_keys.iter() {
-        let volume = latest_footprint[*key].ask_volume + latest_footprint[*key].bid_volume;
-        if volume > volume_threshold && absorption_volume < volume {
-            absorption_price = Some(key);
-            absorption_volume = volume; 
-        }
-    }
+    let absorption_price = state.indicator.absorption_price;
+    let is_current_volume_higher_than_threshold = last_minute_candle.get_candle_acc_trade_volume() > volume_threshold;
 
     if let PositionState::None = position {
         // 흡수 가격 설정
-        if let Some(absorption_price) = absorption_price && state.absorb_price.is_none() {
-            state.absorb_price = Some(absorption_price.parse::<f64>().unwrap());
-            state.absorb_candle_low_price = Some(current_candle.get_low_price());
-            println!("흡수 가격 설정: {}", absorption_price);
+        if absorption_price.is_some() && state.absorb_price.is_none() && is_current_volume_higher_than_threshold {
+            state.absorb_price = absorption_price;
+            state.absorb_candle_low_price = Some(last_minute_candle.get_low_price());
         } 
-        else if state.absorb_price.is_some() {
+        else if state.absorb_price.is_some() && state.absorb_candle_low_price.is_some() {
             let absorb_price = state.absorb_price.unwrap();
-            let mut volume_sum = 0.0;
-            let mut volume_count = 0;
-
             // 흡수 가격보다 현재 가격이 높고 이 보다 높은 가격에 대해 강력한 양수 델타 관찰
-            for key in footprint_sorted_keys.iter() {
-                // 흡수 가격보다 현재 가격이 높은 가격에 대해서만 확인
-                if key.parse::<f64>().unwrap() <= current_price {
-                    continue;
-                }
-
-                let ask_volume = latest_footprint[*key].ask_volume;
-                let bid_volume = latest_footprint[*key].bid_volume;
-
-                // 델타 관찰
-                let delta = ask_volume - bid_volume;
-                volume_sum += delta;
-                volume_count += 1;
-            }
-
-            // 흡수 가격보다 현재 가격이 높고 이 보다 높은 가격에 대해 강력한 양수 델타 관찰
-            let delta_ratio = volume_sum / volume_count as f64;
+            let delta_ratio = state.indicator.footprint_delta_ratio;
 
             if absorb_price < current_price && delta_ratio > params.absorption_delta_ratio {
-                state.initialize_session();
                 if let Some(absorb_candle_low_price) = state.absorb_candle_low_price {
+                    state.initialize_session();
                     return Signal::Buy {
                         reason: "OF1".to_string(),
                         initial_trailing_stop: absorb_candle_low_price,
@@ -126,11 +160,11 @@ pub fn of1(state: &mut Of1State, params: &Of1Params, position: &mut PositionStat
                         asset_pct: 1.0,
                     };
                 }  
+                state.initialize_session();
             }
 
-            if absorb_price > current_price {
+            if state.absorb_candle_low_price.is_some() && state.absorb_candle_low_price.unwrap() > current_price {
                 state.initialize_session();
-                println!("흡수 가격 초기화");
                 return Signal::Hold;
             }
         }

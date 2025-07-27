@@ -66,3 +66,43 @@ pub struct Trade {
     #[serde(rename = "st")]
     pub stream_type: StreamType, // 스트림 타입
 }
+
+// 이전 시간대(분 단위)의 거래 내역만 필터하는 함수
+// current_candle_kst: KST 기준 현재 캔들 시간
+// trade_date와 trade_time은 UTC 기준
+pub fn filter_trades_by_same_minute(trades: &Vec<Trade>, current_candle_kst: &str) -> Vec<Trade> {
+    // KST를 UTC로 변환 (KST = UTC + 9시간)
+    let current_time_kst = chrono::NaiveDateTime::parse_from_str(current_candle_kst, "%Y-%m-%dT%H:%M:%S")
+        .unwrap_or_else(|_| chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc());
+    
+    // KST에서 9시간을 빼서 UTC로 변환
+    let current_time_utc = current_time_kst - chrono::Duration::hours(9);
+    let current_minute_str = current_time_utc.format("%Y-%m-%dT%H:%M").to_string();
+    
+    // 이전 분의 거래 내역만 필터 (UTC 기준으로 비교)
+    trades.iter()
+        .filter(|trade| {
+            // trade_date와 trade_time은 UTC 기준
+            let trade_date = &trade.trade_date; // "YYYY-MM-DD" 형식 (UTC)
+            let trade_time = &trade.trade_time; // "HH:MM:SS" 형식 (UTC)
+            // "HH:MM"로 변환
+            let trade_datetime_str = format!("{}T{}", trade_date, trade_time.split(":").take(2).collect::<Vec<&str>>().join(":"));
+            trade_datetime_str == current_minute_str
+        })
+        .map(|trade| trade.clone())
+        .collect()
+}
+
+pub fn is_trade_time_previous_minute(trade: &Trade, current_candle_kst: &str) -> bool {
+    let current_time_kst = chrono::NaiveDateTime::parse_from_str(current_candle_kst, "%Y-%m-%dT%H:%M:%S")
+        .unwrap_or_else(|_| chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc());
+    
+    let current_time_utc = current_time_kst - chrono::Duration::hours(9);
+    let current_minute_str = current_time_utc.format("%Y-%m-%dT%H:%M").to_string();
+    
+    let trade_date = &trade.trade_date; // "YYYY-MM-DD" 형식 (UTC)
+    let trade_time = &trade.trade_time; // "HH:MM:SS" 형식 (UTC)
+    // "HH:MM"로 변환
+    let trade_datetime_str = format!("{}T{}", trade_date, trade_time.split(":").take(2).collect::<Vec<&str>>().join(":"));
+    trade_datetime_str < current_minute_str
+}
