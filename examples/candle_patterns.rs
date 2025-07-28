@@ -124,7 +124,7 @@ fn main() {
     
     for (name, candle) in test_candles {
         let pattern = identify_candle_pattern(&candle, &previous_candles);
-        println!("{}: {:?}", name, pattern);
+        println!("{}: {:?}", name, pattern.unwrap().to_korean_name());
     }
     
     println!("\n=== 구현된 캔들 패턴 목록 ===");

@@ -107,6 +107,8 @@ fn test_hanging_man_pattern() {
 
 #[test]
 fn test_identify_candle_pattern() {
+    use ctb::helper::candle::CandlePattern;
+    
     let previous_candles = vec![
         create_candle(100.0, 105.0, 98.0, 103.0),
         create_candle(103.0, 107.0, 100.0, 105.0),
@@ -114,15 +116,15 @@ fn test_identify_candle_pattern() {
     
     // 망치형 테스트
     let hammer_candle = create_candle(100.0, 105.0, 95.0, 102.0);
-    assert_eq!(identify_candle_pattern(&hammer_candle, &previous_candles), Some("망치형"));
+    assert_eq!(identify_candle_pattern(&hammer_candle, &previous_candles), Some(CandlePattern::Hammer));
     
     // 장대 양봉형 테스트
     let long_bullish_candle = create_candle(100.0, 120.0, 98.0, 118.0);
-    assert_eq!(identify_candle_pattern(&long_bullish_candle, &previous_candles), Some("장대 양봉형"));
+    assert_eq!(identify_candle_pattern(&long_bullish_candle, &previous_candles), Some(CandlePattern::LongBullishCandle));
     
     // 십자형 테스트
     let doji_candle = create_candle(100.0, 105.0, 95.0, 100.5);
-    assert_eq!(identify_candle_pattern(&doji_candle, &previous_candles), Some("십자형"));
+    assert_eq!(identify_candle_pattern(&doji_candle, &previous_candles), Some(CandlePattern::Doji));
     
     // 패턴이 없는 일반 캔들 테스트
     let normal_candle = create_candle(100.0, 110.0, 90.0, 108.0);

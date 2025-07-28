@@ -8,3 +8,4 @@ pub mod vwma_ma_grok;
 pub mod vwap;
 pub mod orderbook;
 pub mod of1;
+pub mod candle_pattern;

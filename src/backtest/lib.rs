@@ -19,7 +19,7 @@ impl BacktestParams {
     pub fn default(code: &str, strategy_name: &str) -> Self {
         Self {
             code: code.to_string(),
-            fees_pct: 0.0015,
+            fees_pct: 0.0005,
             enable_webhook_log: true,
             strategy_name: strategy_name.to_string(),
         }
@@ -239,7 +239,7 @@ impl BacktesterState {
                 self.current_asset += entry_asset * (1.0 + pnl_pct);
                 self.total_pnl_pct = (self.current_asset / INITIAL_ASSET) - 1.0;
                 self.position = PositionState::None; // 포지션 청산
-                self.print_results(); // 중간 결과 출력
+                // self.print_results(); // 중간 결과 출력
             }
             
             if let Signal::UpdateTrailingStop(new_trailing_stop) = signal {
