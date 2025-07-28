@@ -35,7 +35,9 @@ impl SimulationConfig {
 pub fn simulate(candles: Vec<Candle>, backtester: &mut BacktesterState) {
     // let mut state = MarketState::new();
     let mut state = candle_pattern::CandlePatternStrategyState::new();
-    let config = candle_pattern::CandlePatternStrategyConfig::new();
+    let mut config = candle_pattern::CandlePatternStrategyConfig::new();
+    config.enable_log = false;
+
     // state.historical_candles = history_candles.into_iter().map(|c| c as Box<dyn CandleTrait>).collect();
 
     let first_trade_utc = candles.first().unwrap().get_candle_date_time_utc().to_string();

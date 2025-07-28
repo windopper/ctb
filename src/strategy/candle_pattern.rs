@@ -16,7 +16,7 @@ pub struct CandlePatternStrategyState {
 
 /// 캔들 패턴 전략의 설정
 pub struct CandlePatternStrategyConfig {
-    enable_log: bool,
+    pub enable_log: bool,
     rsi_period: usize,
     rsi_oversold: f64, // RSI 과매도 기준
     rsi_overbought: f64, // RSI 과매수 기준
@@ -47,7 +47,7 @@ impl CandlePatternStrategyConfig {
             rsi_oversold: 35.0, // 과매도 기준
             rsi_overbought: 65.0, // 과매수 기준
             volume_threshold: 1.2, // 거래량 임계값을 더 낮게
-            weight_decay_rate: 0.7, // weight 감쇠율을 더 느리게
+            weight_decay_rate: 0.9, // weight 감쇠율을 더 느리게
             min_weight_for_buy: 1.0, // 매수 신호 임계값을 더 낮게
             max_weight_for_sell: -1.0, // 매도 신호 임계값을 더 높게
             short_ema_period: 5,
@@ -253,11 +253,7 @@ impl CandlePatternStrategyState {
         let current_short_ema = *short_ema.last().unwrap_or(&0.0);
         let current_long_ema = *long_ema.last().unwrap_or(&0.0);
 
-        let previous_short_ema = *short_ema.get(short_ema.len() - 2).unwrap_or(&0.0);
-        let previous_long_ema = *long_ema.get(long_ema.len() - 2).unwrap_or(&0.0);
-
-        let short_ema_slope = current_short_ema - previous_short_ema;
-        let long_ema_slope = current_long_ema - previous_long_ema;
+        let slope = self.calculate_slope(&closes, 5);
         
         // 강한 추세 조건: EMA 정렬
         // uptrend 조건: 단기 EMA > 장기 EMA
@@ -265,11 +261,8 @@ impl CandlePatternStrategyState {
         let ema_aligned_up = current_short_ema > current_long_ema;
         let ema_aligned_down = current_short_ema < current_long_ema;
 
-        let all_slopes_positive = short_ema_slope > 0.0 && long_ema_slope > 0.0;
-        let all_slopes_negative = short_ema_slope < 0.0 && long_ema_slope < 0.0;
-
-        let uptrend = ema_aligned_up && all_slopes_positive;
-        let downtrend = ema_aligned_down && all_slopes_negative;
+        let uptrend = ema_aligned_up && slope > 0.0;
+        let downtrend = ema_aligned_down && slope < 0.0;
         
         // 추세 판단
         if false {
@@ -280,23 +273,27 @@ impl CandlePatternStrategyState {
             TrendDirection::StrongDowntrend
         } else if downtrend {
             TrendDirection::Downtrend
+        } else if slope > 0.0 {
+            TrendDirection::DowntrendNeutral
+        } else if slope < 0.0 {
+            TrendDirection::UptrendNeutral
         } else {
             TrendDirection::Neutral
         }
     }
 
     /// EMA 기울기 계산 (여러 기간의 평균 기울기)
-    pub fn calculate_ema_slope(&self, ema_values: &[f64], period: usize) -> f64 {
-        if ema_values.len() < period + 1 {
+    pub fn calculate_slope(&self, values: &[f64], period: usize) -> f64 {
+        if values.len() < period + 1 {
             return 0.0;
         }
         
         let mut slopes = Vec::new();
         
         // 최근 period개 기간의 기울기들을 계산
-        for i in (ema_values.len() - period)..ema_values.len() {
+        for i in (values.len() - period)..values.len() {
             if i > 0 {
-                let slope = ema_values[i] - ema_values[i - 1];
+                let slope = values[i] - values[i - 1];
                 slopes.push(slope);
             }
         }
@@ -451,50 +448,48 @@ impl CandlePatternStrategyState {
                 // 상승장에서의 패턴 가중치
                 match pattern {
                     // 매수 신호 패턴들 (상승 지속 또는 반등 신호)
-                    Some(CandlePattern::LongBullishCandle) => 0.3, // 장대 양봉형 - 상승장에서 강한 매수세, 지속적 상승 예상
-                    Some(CandlePattern::Hammer) => 0.1, // 망치형 - 하락추세에서 상승반전 신호, 바닥권에서 단기 매수 신호
-                    Some(CandlePattern::BottomTailBullish) => 0.1, // 밑꼬리양봉형 - 상승지속
-                    Some(CandlePattern::DragonflyDoji) => 0.1, // 잠자리형 - 하락추세에서 상승 반전 신호, 상승추세에서 지속적 상승 신호
-                    Some(CandlePattern::RisingShootingStar) => 0.1, // 상승 샅바형 - 하락추세에서 기술적 반등 예상, 상승 전환 신호
-                    
-                    // 매도 신호 패턴들 (상승장에서 하락 전환 신호)
-                    Some(CandlePattern::InvertedHammer) => -0.1, // 역망치형 - 하락추세에서 상승반전 신호, 기술적 반등 예상
-                    Some(CandlePattern::LongBearishCandle) => -0.3, // 장대 음봉형 - 상승장에서 나타나면 하락 전환 신호
-                    Some(CandlePattern::TopTailBearish) => -0.1, // 윗꼬리음봉형 - 상승추세에서 하락반전 신호, 매도세 증가 신호
-                    Some(CandlePattern::ShootingStar) => -0.1, // 유성형 - 상승추세 고점에서 하락 전환 신호, 강한 매도세
-                    Some(CandlePattern::GravestoneDoji) => -0.2, // 비석 십자형 - 상승추세 고점에서 하락 전환 신호, 윗꼬리가 길수록 신뢰성 높음
-                    Some(CandlePattern::HangingMan) => -0.1, // 교수형 - 상승추세 고점에서 하락 전환 신호, 매도세 증가
-                    Some(CandlePattern::FallingShootingStar) => -0.2, // 하락 샅바형 - 상승추세에서 기술적 하락 예상, 하락 전환 신호
+                    Some(CandlePattern::LongBullishCandle) => 0.3, // 장대 양봉형
+                    Some(CandlePattern::Hammer) => 0.1, // 망치형
+                    Some(CandlePattern::BottomTailBullish) => 0.1, // 밑꼬리양봉형
+                    Some(CandlePattern::DragonflyDoji) => 0.1, // 잠자리형
+                    Some(CandlePattern::RisingShootingStar) => 0.1, // 상승 샅바형
+
+                    Some(CandlePattern::InvertedHammer) => -0.1, // 역망치형
+                    Some(CandlePattern::LongBearishCandle) => -0.3, // 장대 음봉형
+                    Some(CandlePattern::TopTailBearish) => -0.1, // 윗꼬리음봉형
+                    Some(CandlePattern::ShootingStar) => -0.1, // 유성형
+                    Some(CandlePattern::GravestoneDoji) => -0.2, // 비석 십자형
+                    Some(CandlePattern::HangingMan) => -0.1, // 교수형
+                    Some(CandlePattern::FallingShootingStar) => -0.2, // 하락 샅바형
                     
                     // 중립 패턴들
-                    Some(CandlePattern::Doji) => 0.0, // 십자형 - 추세 전환 신호, 상승추세에서 하락, 하락추세에서 상승 반전 가능
-                    Some(CandlePattern::FourPriceDoji) => 0.0, // 점십자형 - 예측 불가능한 패턴, 상한가/하한가 거래 또는 거래량 부족
-                    None => 0.0, // 패턴 없음
+                    Some(CandlePattern::Doji) => 0.0, // 십자형
+                    Some(CandlePattern::FourPriceDoji) => 0.0, // 점십자형
+                    None => 0.1, // 패턴 없음
                 }
             },
             TrendDirection::Downtrend | TrendDirection::StrongDowntrend => {
                 // 하락장에서의 패턴 가중치
                 match pattern {
                     // 매수 신호 패턴들 (하락장에서 반등 신호)
-                    Some(CandlePattern::Hammer) => 0.1, // 망치형 - 하락추세에서 상승반전 신호, 바닥권에서 단기 매수 신호
-                    Some(CandlePattern::InvertedHammer) => 0.1, // 역망치형 - 하락추세에서 상승반전 신호, 기술적 반등 예상
-                    Some(CandlePattern::BottomTailBullish) => 0.1, // 밑꼬리양봉형 - 하락지속
-                    Some(CandlePattern::DragonflyDoji) => 0.1, // 잠자리형 - 하락추세에서 상승 반전 신호, 상승추세에서 지속적 상승 신호
-                    Some(CandlePattern::RisingShootingStar) => 0.1, // 상승 샅바형 - 하락추세에서 기술적 반등 예상, 상승 전환 신호
-                    Some(CandlePattern::Doji) => 0.1, // 십자형 - 하락추세에서 상승 반전 가능
-                    
-                    // 매도 신호 패턴들 (하락 지속 신호)
-                    Some(CandlePattern::LongBearishCandle) => -0.3, // 장대 음봉형 - 하락장에서 강한 매도세, 지속적 하락 예상
-                    Some(CandlePattern::TopTailBearish) => -0.1, // 윗꼬리음봉형 - 상승추세에서 하락반전 신호, 매도세 증가 신호
-                    Some(CandlePattern::ShootingStar) => -0.1, // 유성형 - 상승추세 고점에서 하락 전환 신호, 강한 매도세
+                    Some(CandlePattern::Hammer) => 0.1, // 망치형
+                    Some(CandlePattern::InvertedHammer) => 0.1, // 역망치형
+                    Some(CandlePattern::BottomTailBullish) => 0.1, // 밑꼬리양봉형
+                    Some(CandlePattern::DragonflyDoji) => 0.1, // 잠자리형
+                    Some(CandlePattern::RisingShootingStar) => 0.1, // 상승 샅바형
+                    Some(CandlePattern::Doji) => 0.1, // 십자형
+                    Some(CandlePattern::LongBullishCandle) => 0.3, // 장대 양봉형 
+
+                    Some(CandlePattern::LongBearishCandle) => -0.3, // 장대 음봉형
+                    Some(CandlePattern::TopTailBearish) => -0.1, // 윗꼬리음봉형
+                    Some(CandlePattern::ShootingStar) => -0.1, // 유성형
                     Some(CandlePattern::GravestoneDoji) => 0.2, // 비석 십자형
-                    Some(CandlePattern::HangingMan) => -0.1, // 교수형 - 상승추세 고점에서 하락 전환 신호, 매도세 증가
-                    Some(CandlePattern::FallingShootingStar) => -0.1, // 하락 샅바형 - 상승추세에서 기술적 하락 예상, 하락 전환 신호
+                    Some(CandlePattern::HangingMan) => -0.1, // 교수형
+                    Some(CandlePattern::FallingShootingStar) => -0.1, // 하락 샅바형
                     
                     // 중립 패턴들
-                    Some(CandlePattern::LongBullishCandle) => 0.0, // 장대 양봉형 - 하락장에서는 신중하게 접근
-                    Some(CandlePattern::FourPriceDoji) => 0.0, // 점십자형 - 예측 불가능한 패턴, 상한가/하한가 거래 또는 거래량 부족
-                    None => 0.0, // 패턴 없음
+                    Some(CandlePattern::FourPriceDoji) => 0.0, // 점십자형
+                    None => -0.1, // 패턴 없음
                 }
             },
             TrendDirection::Neutral => {
@@ -504,24 +499,53 @@ impl CandlePatternStrategyState {
                     Some(CandlePattern::LongBullishCandle) => 0.3, // 장대 양봉형
                     Some(CandlePattern::LongBearishCandle) => -0.3, // 장대 음봉형
                     Some(CandlePattern::Hammer) => 0.1, // 망치형
-                    Some(CandlePattern::ShootingStar) => 0.0, // 유성형
-                    Some(CandlePattern::DragonflyDoji) => 0.0, // 잠자리형
-                    Some(CandlePattern::GravestoneDoji) => 0.0, // 비석 십자형
-                    
-                    // 약한 신호들
-                    Some(CandlePattern::InvertedHammer) => 0.0, // 역망치형
-                    Some(CandlePattern::BottomTailBullish) => 0.0, // 밑꼬리양봉형
-                    Some(CandlePattern::TopTailBearish) => 0.0, // 윗꼬리음봉형
-                    Some(CandlePattern::HangingMan) => 0.0, // 교수형
-                    Some(CandlePattern::RisingShootingStar) => 0.0, // 상승 샅바형
-                    Some(CandlePattern::FallingShootingStar) => 0.0, // 하락 샅바형
-                    
+                    Some(CandlePattern::BottomTailBullish) => 0.1, // 상승샅바형
                     // 중립 패턴들
-                    Some(CandlePattern::Doji) => 0.0, // 십자형
-                    Some(CandlePattern::FourPriceDoji) => 0.0, // 점십자형
-                    None => 0.0, // 패턴 없음
+                    _ => 0.0,
                 }
-            }
+            },
+            // 상승 추세 중 중립(횡보) 패턴
+            TrendDirection::UptrendNeutral => {
+                match pattern {
+                    // 상승 추세 지속을 암시하는 강한 매수 신호
+                    Some(CandlePattern::LongBullishCandle) => 0.3, // 장대 양봉형
+                    Some(CandlePattern::Hammer) => 0.2, // 망치형
+                    Some(CandlePattern::BottomTailBullish) => 0.2, // 밑꼬리양봉형
+
+                    // 추세 반전을 경고하는 강한 매도 신호
+                    Some(CandlePattern::LongBearishCandle) => -0.3, // 장대 음봉형
+                    Some(CandlePattern::ShootingStar) => -0.2, // 유성형
+                    Some(CandlePattern::HangingMan) => -0.2, // 교수형
+                    Some(CandlePattern::GravestoneDoji) => -0.2, // 비석 십자형
+
+                    // 횡보 상태(불확실성)를 나타내는 중립 신호
+                    Some(CandlePattern::Doji) => 0.0, // 십자형
+                    Some(CandlePattern::InvertedHammer) => 0.0, // 역망치형 (상승 추세 중에는 신뢰도 하락)
+                    None => 0.0, // 특정 패턴 없음
+                    _ => 0.0,
+                }
+            },
+            // 하락 추세 중 중립(횡보) 패턴
+            TrendDirection::DowntrendNeutral => {
+                match pattern {
+                    // 하락 추세 반전을 암시하는 강한 매수 신호
+                    Some(CandlePattern::LongBullishCandle) => 0.3, // 장대 양봉형
+                    Some(CandlePattern::Hammer) => 0.2, // 망치형
+                    Some(CandlePattern::InvertedHammer) => 0.2, // 역망치형 (하락 추세 중에는 반등 신호로 해석)
+                    Some(CandlePattern::DragonflyDoji) => 0.2, // 잠자리형
+
+                    // 하락 추세 지속을 암시하는 강한 매도 신호
+                    Some(CandlePattern::LongBearishCandle) => -0.3, // 장대 음봉형
+                    Some(CandlePattern::ShootingStar) => -0.2, // 유성형
+                    Some(CandlePattern::FallingShootingStar) => -0.2, // 하락 샅바형
+
+                    // 횡보 상태(불확실성)를 나타내는 중립 신호
+                    Some(CandlePattern::Doji) => 0.0, // 십자형
+                    Some(CandlePattern::HangingMan) => 0.0, // 교수형 (하락 추세 중에는 신뢰도 하락)
+                    None => 0.0, // 특정 패턴 없음
+                    _ => 0.0,
+                }
+            },
         };
         
         // --- 거래량, 몸통, 꼬리 신뢰도 가중치 계산 ---
@@ -640,9 +664,11 @@ impl CandlePatternStrategyState {
 enum TrendDirection {
     StrongUptrend,   // 강한 상승 추세
     Uptrend,         // 상승 추세
-    Neutral,         // 중립
+    Neutral,
     Downtrend,       // 하락 추세
     StrongDowntrend, // 강한 하락 추세
+    UptrendNeutral, // 상승 추세 중립
+    DowntrendNeutral, // 하락 추세 중립
 }
 
 pub fn candle_pattern_strategy(
@@ -708,7 +734,7 @@ pub fn candle_pattern_strategy(
     match position {
         PositionState::None => {
             // 포지션이 없을 때 - 매수 신호 확인
-            if state.weight >= buy_threshold {
+            if (state.weight >= buy_threshold * 2.0 && trend == TrendDirection::Downtrend) || (state.weight >= buy_threshold && trend != TrendDirection::Downtrend) {
                 // // 단순한 모멘텀 전략: 추세 필터 제거
                 // // RSI 필터: 과매도 구간에서만 매수
                 // let rsi_weight = state.calculate_rsi_weight(config);

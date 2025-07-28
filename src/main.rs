@@ -4,9 +4,24 @@ use ctb::{
     }, core::candle::{Candle, CandleBase}, webhook::lib::send_webhook
 };
 use tokio::sync::mpsc;
-
+use chrono::{DateTime, Utc, Duration, TimeZone};
+use rand::Rng;
 
 const CODES: [&str; 5] = ["KRW-XRP", "KRW-BLAST", "KRW-BTC", "KRW-ETH", "KRW-GLM"];
+
+fn generate_random_date() -> String {
+    let mut rng = rand::rng();
+    
+    // 2024년 1월 1일부터 2024년 12월 31일까지의 랜덤 날짜
+    let year = 2024;
+    let month = rng.random_range(1..=12);
+    let day = rng.random_range(1..=28); // 간단하게 28일까지로 제한
+    let hour = rng.random_range(0..24);
+    let minute = rng.random_range(0..60);
+    let second = rng.random_range(0..60);
+    
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hour, minute, second)
+}
 
 #[tokio::main]
 async fn main() {
@@ -15,8 +30,10 @@ async fn main() {
 }
 
 async fn snapshop_simulation() {
-    let random_date = "2025-07-28 06:20:00";
-    let candles = fetch_n_minute_candles("KRW-XRP", 400, random_date, 3).await.unwrap();
+    let random_date = generate_random_date();
+    println!("선택된 랜덤 시간: {}", random_date);
+    
+    let candles = fetch_n_minute_candles("KRW-BTC", 50000, &random_date, 1).await.unwrap();
     let candles = candles.into_iter().map(|c| {
         // Box<dyn CandleTrait>에서 Candle로 변환
         // 실제로는 MinuteCandle이므로 Candle로 변환
