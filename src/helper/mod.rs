@@ -23,3 +23,4 @@ pub mod trade;
 pub mod cvd;
 pub mod footprint;
 pub mod candle;
+pub mod support_resistance;

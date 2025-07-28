@@ -33,7 +33,7 @@ async fn snapshop_simulation() {
     let random_date = generate_random_date();
     println!("선택된 랜덤 시간: {}", random_date);
     
-    let candles = fetch_n_minute_candles("KRW-BTC", 50000, &random_date, 1).await.unwrap();
+    let candles = fetch_n_minute_candles("KRW-BTC", 10000, &random_date, 5).await.unwrap();
     let candles = candles.into_iter().map(|c| {
         // Box<dyn CandleTrait>에서 Candle로 변환
         // 실제로는 MinuteCandle이므로 Candle로 변환
